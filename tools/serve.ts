@@ -8,7 +8,7 @@ const DIST = fileURLToPath(new URL('../dist/', import.meta.url));
 // --slow จำลองเน็ตบ้านราว 2 MB ต่อวินาที ไว้ดูหน้าตาตอนโหลดตัวคอมไพล์ครั้งแรก
 const SLOW = process.argv.includes('--slow');
 const PORT = Number(process.env.PORT || (SLOW ? 8725 : 8723));
-const TYPES = {
+const TYPES: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
@@ -20,7 +20,7 @@ const TYPES = {
 };
 
 http.createServer((req, res) => {
-  const url = new URL(req.url, 'http://localhost');
+  const url = new URL(req.url ?? '/', 'http://localhost');
   let file = path.join(DIST, decodeURIComponent(url.pathname));
   if (!file.startsWith(DIST)) {
     res.writeHead(403).end();
@@ -31,12 +31,12 @@ http.createServer((req, res) => {
     res.writeHead(404).end();
     return;
   }
-  const type = TYPES[path.extname(file)] || 'application/octet-stream';
+  const type = TYPES[path.extname(file)] ?? 'application/octet-stream';
   const cache = SLOW && file.endsWith('.gz') ? 'no-store' : type.startsWith('text/html') ? 'no-cache' : 'max-age=600';
   res.writeHead(200, { 'content-type': type, 'content-length': fs.statSync(file).size, 'cache-control': cache });
   const stream = fs.createReadStream(file, { highWaterMark: 64 * 1024 });
   if (SLOW && file.endsWith('.gz')) {
-    (async () => {
+    void (async () => {
       for await (const chunk of stream) {
         res.write(chunk);
         await new Promise((r) => setTimeout(r, 32));

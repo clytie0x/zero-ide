@@ -9,25 +9,28 @@
 
 ```bash
 npm ci
+npm run typecheck # ตรวจ type ทั้งฝั่งหน้าเว็บ worker และเครื่องมือ
 npm test          # คอมไพล์และรันโปรแกรมตัวอย่างด้วย clang ตัวเดียวกับบนเว็บ
 npm run build     # สร้างเว็บลง dist/ ใช้เวลาราวครึ่งนาที
 npm run serve     # เปิด dist/ ที่ http://localhost:8723/
 ```
 
-`node tools/serve.mjs --slow` เปิดที่พอร์ต 8725 แบบจำลองเน็ตช้า ไว้ดูหน้าจอตอนโหลดตัวคอมไพล์ครั้งแรก
+`node tools/serve.ts --slow` เปิดที่พอร์ต 8725 แบบจำลองเน็ตช้า ไว้ดูหน้าจอตอนโหลดตัวคอมไพล์ครั้งแรก
 
 ## ทำงานอย่างไร
 
 | ไฟล์ | หน้าที่ |
 |---|---|
-| `src/toolchain.js` | flag ของ C และ C++ กับขั้นตอนคอมไพล์ ใช้ร่วมกันทั้งเว็บ build และเทส |
-| `src/compile-worker.js` | โหลด clang ([@yowasp/clang](https://www.npmjs.com/package/@yowasp/clang) รุ่น 22) แล้วคอมไพล์ใน Web Worker |
-| `src/clang-fetch.js` | โหลดไฟล์ clang แบบ `.gz` แล้วคลายในเบราว์เซอร์ เก็บไว้ใน Cache Storage เปิดครั้งต่อไปไม่ต้องโหลดอีก |
-| `src/run-worker.js` `src/run-core.js` | รันโปรแกรมใน Worker แยกด้วย WASI ([browser_wasi_shim](https://github.com/bjorn3/browser_wasi_shim)) จำกัด 10 วินาทีและผลลัพธ์ 1 MB |
+| `src/toolchain.ts` | flag ของ C และ C++ กับขั้นตอนคอมไพล์ ใช้ร่วมกันทั้งเว็บ build และเทส |
+| `src/compile-worker.ts` | โหลด clang ([@yowasp/clang](https://www.npmjs.com/package/@yowasp/clang) รุ่น 22) แล้วคอมไพล์ใน Web Worker |
+| `src/clang-fetch.ts` | โหลดไฟล์ clang แบบ `.gz` แล้วคลายในเบราว์เซอร์ เก็บไว้ใน Cache Storage เปิดครั้งต่อไปไม่ต้องโหลดอีก |
+| `src/run-worker.ts` `src/run-core.ts` | รันโปรแกรมใน Worker แยกด้วย WASI ([browser_wasi_shim](https://github.com/bjorn3/browser_wasi_shim)) จำกัด 10 วินาทีและผลลัพธ์ 1 MB |
 | `src/stdc++.h` | ใช้แทน `<bits/stdc++.h>` ที่ libc++ ไม่มี ตอน build สร้างเป็น PCH ให้คอมไพล์ C++ เร็วขึ้น |
-| `src/share.js` | ลิงก์แชร์โค้ดหลัง `#` |
-| `src/sw.js` | service worker เก็บหน้าเว็บไว้ใช้ตอนเน็ตหลุด |
-| `tools/build.mjs` | สร้าง `dist/` ทุกไฟล์มี hash ในชื่อ ไฟล์ clang อยู่ใน `clang/<hash>/` |
+| `src/share.ts` | ลิงก์แชร์โค้ดหลัง `#` |
+| `src/sw.ts` | service worker เก็บหน้าเว็บไว้ใช้ตอนเน็ตหลุด |
+| `tools/build.ts` | สร้าง `dist/` ทุกไฟล์มี hash ในชื่อ ไฟล์ clang อยู่ใน `clang/<hash>/` |
+
+เขียนด้วย TypeScript แบบ strict ต้องใช้ Node 24 ขึ้นไป ซึ่งรันไฟล์ `.ts` ใน `tools/` กับ `test/` ได้เลย ส่วนหน้าเว็บ esbuild แปลงให้ตอน build มี tsconfig สามชุดเพราะใช้ type คนละแบบ `tsconfig.json` ใช้กับหน้าเว็บ `tsconfig.worker.json` ใช้กับ worker และ service worker ส่วน `tsconfig.node.json` ใช้กับเครื่องมือและเทส
 
 ตัวเลขที่วัดได้บนเครื่องผู้ดูแล (Chrome) คอมไพล์ C ราว 0.4 วินาที C++ ที่ใช้ `bits/stdc++.h` ราว 0.9 วินาที เปิดครั้งแรกต้องโหลดราว 27 MB ถ้าเลือก C++ โหลด PCH เพิ่มอีกราว 16 MB
 

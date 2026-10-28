@@ -1,0 +1,16 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2022", "WebWorker"],
+    "types": []
+  },
+  "include": [
+    "src/compile-worker.ts",
+    "src/run-worker.ts",
+    "src/clang-fetch.ts",
+    "src/run-core.ts",
+    "src/toolchain.ts",
+    "src/sw.ts",
+    "src/env.d.ts"
+  ]
+}

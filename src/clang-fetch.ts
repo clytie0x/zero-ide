@@ -3,7 +3,7 @@
 
 const CACHE_PREFIX = 'zero-ide-clang-';
 
-async function openCache(name) {
+async function openCache(name: string): Promise<Cache | null> {
   try {
     const keys = await caches.keys();
     // ลบของรุ่นเก่าทิ้ง ไม่ให้เปลืองที่ในเครื่องผู้เรียน
@@ -14,11 +14,11 @@ async function openCache(name) {
   }
 }
 
-export function installClangFetch(base, manifest) {
+export function installClangFetch(base: string, manifest: ClangManifest): void {
   const original = self.fetch.bind(self);
   const cacheReady = openCache(CACHE_PREFIX + manifest.id);
 
-  self.fetch = async (input, init) => {
+  self.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const href = new URL(input instanceof Request ? input.url : String(input), self.location.href).href;
     const entry = href.startsWith(base) ? manifest.files[href.slice(base.length)] : undefined;
     if (!entry) return original(input, init);

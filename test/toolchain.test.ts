@@ -2,29 +2,42 @@ import { test, before } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { runClang } from '@yowasp/clang';
-import { compile } from '../src/toolchain.js';
-import { run } from '../src/run-core.js';
-import { buildPch } from '../tools/pch.mjs';
+import { compile, type CompileResult, type Lang } from '../src/toolchain.ts';
+import { run } from '../src/run-core.ts';
+import { buildPch } from '../tools/pch.ts';
 
 const header = fs.readFileSync(new URL('../src/stdc++.h', import.meta.url), 'utf8');
-let pch;
+let pch: Uint8Array | null = null;
 
 before(async () => {
   pch = await buildPch(header);
 });
 
-async function compileAndRun(lang, source, input = '', usePch = true) {
+interface Outcome {
+  compile: CompileResult;
+  code: number | null;
+  trap: string | null;
+  stdout: string;
+  stderr: string;
+}
+
+async function compileAndRun(lang: Lang, source: string, input = '', usePch = true): Promise<Outcome> {
   const c = await compile(runClang, { lang, source, header, pch: usePch ? pch : null });
-  if (!c.ok) return { compile: c };
-  let stdout = '';
-  let stderr = '';
+  const outcome: Outcome = { compile: c, code: null, trap: null, stdout: '', stderr: '' };
+  if (!c.ok) return outcome;
   const dec = new TextDecoder();
-  const r = await run(c.wasm, {
+  const r = await run(new Uint8Array(c.wasm), {
     stdin: new TextEncoder().encode(input),
-    onStdout: (b) => { stdout += dec.decode(b); },
-    onStderr: (b) => { stderr += dec.decode(b); },
+    onStdout: (b) => {
+      outcome.stdout += dec.decode(b);
+    },
+    onStderr: (b) => {
+      outcome.stderr += dec.decode(b);
+    },
   });
-  return { compile: c, ...r, stdout, stderr };
+  if ('code' in r) outcome.code = r.code;
+  else outcome.trap = r.trap;
+  return outcome;
 }
 
 test('C อ่าน scanf แล้วพิมพ์ผล', async () => {
