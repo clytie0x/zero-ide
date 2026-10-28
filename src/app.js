@@ -162,15 +162,13 @@ $('stdin').addEventListener('keydown', (e) => {
 
 /* ---------- สถานะ ---------- */
 
-function setStatus(text, tone = '') {
-  const el = $('status');
-  el.textContent = text;
-  if (tone) el.dataset.tone = tone;
-  else delete el.dataset.tone;
+// สถานะแสดงบนหัวหน้าต่างผลลัพธ์ และส่งให้โปรแกรมอ่านหน้าจอทางช่องที่ซ่อนไว้
+function setStatus(text) {
+  $('term-title').textContent = text;
+  $('status').textContent = text;
 }
 
-const mb = (n) => (n / 1048576).toFixed(n < 10 * 1048576 ? 1 : 0);
-const sec = (ms) => (ms < 10 ? 'ไม่ถึง 0.01' : (ms / 1000).toFixed(2));
+const mb = (n) => (n / 1048576).toFixed(0);
 
 /* ---------- ตัวคอมไพล์ ---------- */
 
@@ -191,11 +189,12 @@ compiler.onmessage = ({ data }) => {
   } else if (data.type === 'ready') {
     compilerReady = true;
     loadBar.hidden = true;
-    if (!busy) setStatus('พร้อมรัน');
+    if (!busy) setStatus('ผลลัพธ์');
     navigator.storage?.persist?.().catch(() => {});
   } else if (data.type === 'load-error') {
     loadBar.hidden = true;
-    setStatus('โหลดตัวคอมไพล์ไม่สำเร็จ ตรวจอินเทอร์เน็ตแล้วรีเฟรชหน้าใหม่', 'bad');
+    setStatus('โหลดตัวคอมไพล์ไม่สำเร็จ');
+    appendOut('[โหลดตัวคอมไพล์ไม่สำเร็จ ตรวจอินเทอร์เน็ตแล้วรีเฟรชหน้าใหม่]\n', 'sys');
     for (const [, reject] of pending.values()) reject(new Error(data.message));
     pending.clear();
   } else if (data.type === 'compiled') {
@@ -285,11 +284,13 @@ function appendOut(text, cls) {
   if (atBottom) out.scrollTop = out.scrollHeight;
 }
 
+// ระหว่างโปรแกรมรัน ปุ่มหยุดขึ้นแทนที่ปุ่มรัน
 function setBusy(on, running = false) {
   busy = on;
   const run = $('run-btn');
   run.setAttribute('aria-busy', String(on));
   run.disabled = on;
+  run.hidden = running;
   $('stop-btn').hidden = !running;
 }
 
@@ -313,8 +314,7 @@ async function runCode() {
   out.replaceChildren();
   $('compiler-log').hidden = true;
   $('log-note').hidden = true;
-  $('term-title').textContent = 'ผลลัพธ์';
-  setStatus(compilerReady ? 'กำลังคอมไพล์' : 'รอโหลดตัวคอมไพล์ให้เสร็จก่อน แล้วจะคอมไพล์ให้ทันที');
+  setStatus(compilerReady ? 'กำลังคอมไพล์' : 'รอโหลดตัวคอมไพล์ให้เสร็จ แล้วจะคอมไพล์ให้ทันที');
 
   let compiled;
   try {
@@ -332,25 +332,26 @@ async function runCode() {
     }
   }
   if (!compiled.ok) {
-    setStatus(compiled.crashed ? 'ตัวคอมไพล์ทำงานผิดพลาด ลองรีเฟรชหน้าแล้วรันใหม่' : 'คอมไพล์ไม่ผ่าน ดูข้อความจาก compiler ด้านล่าง', 'bad');
+    setStatus(compiled.crashed ? 'ตัวคอมไพล์ทำงานผิดพลาด' : 'คอมไพล์ไม่ผ่าน');
+    if (compiled.crashed) appendOut('[ตัวคอมไพล์ทำงานผิดพลาด ลองรีเฟรชหน้าแล้วรันใหม่]\n', 'sys');
     setBusy(false);
     return;
   }
 
   setBusy(true, true);
-  setStatus(`คอมไพล์เสร็จใน ${sec(compiled.ms)} วินาที กำลังรัน`);
-  $('term-title').textContent = 'กำลังรัน';
+  setStatus('กำลังรัน');
   const stdin = new TextEncoder().encode($('stdin').value);
 
+  // note คือบรรทัดอธิบายท้ายผลลัพธ์ ใส่เฉพาะตอนจบไม่ปกติ
   await new Promise((resolve) => {
     runner = new Worker(new URL(WORKERS.run, document.baseURI), { type: 'module' });
-    finishRun = (text, tone, title) => {
+    finishRun = (title, note) => {
       clearTimeout(runTimer);
       runner?.terminate();
       runner = null;
       finishRun = null;
-      $('term-title').textContent = title;
-      setStatus(text, tone);
+      if (note) appendOut(`${out.textContent && !out.textContent.endsWith('\n') ? '\n' : ''}[${note}]\n`, 'sys');
+      setStatus(title);
       resolve();
     };
     runner.onmessage = ({ data }) => {
@@ -359,21 +360,18 @@ async function runCode() {
         appendOut(data.err, 'err');
         return;
       }
-      if (data.truncated) appendOut('\n[ผลลัพธ์ยาวเกิน 1 MB โปรแกรมถูกหยุด]\n', 'sys');
-      const time = `ใช้เวลา ${sec(data.ms)} วินาที`;
-      if (data.limited) finishRun('ผลลัพธ์ยาวเกิน 1 MB จึงหยุดโปรแกรม อาจมีลูปที่ไม่จบ', 'bad', 'ผลลัพธ์ยาวเกิน');
-      else if (data.error) finishRun(`รันไม่สำเร็จ ${data.error}`, 'bad', 'รันไม่สำเร็จ');
-      else if (data.trap) finishRun(`${describeTrap(data.trap)} ${time}`, 'bad', 'โปรแกรมหยุดทำงานผิดปกติ');
-      else if (data.code === 0) finishRun(`จบโปรแกรม ${time} ค่าที่ return คือ 0`, 'ok', 'จบโปรแกรม');
-      else finishRun(`จบโปรแกรม ${time} ค่าที่ return คือ ${data.code}`, 'warn', `จบด้วยค่า ${data.code}`);
+      if (data.limited) finishRun('ผลลัพธ์ยาวเกิน', 'ผลลัพธ์ยาวเกิน 1 MB โปรแกรมถูกหยุด อาจมีลูปที่ไม่จบ');
+      else if (data.error) finishRun('รันไม่สำเร็จ', data.error);
+      else if (data.trap) finishRun('โปรแกรมหยุดทำงานผิดปกติ', describeTrap(data.trap));
+      else if (data.code === 0) finishRun('จบโปรแกรม');
+      else finishRun(`จบโปรแกรม ค่าที่ return คือ ${data.code}`);
     };
     runner.onerror = (e) => {
       e.preventDefault();
-      finishRun('รันไม่สำเร็จ ลองรีเฟรชหน้าแล้วรันใหม่', 'bad', 'รันไม่สำเร็จ');
+      finishRun('รันไม่สำเร็จ', 'ลองรีเฟรชหน้าแล้วรันใหม่');
     };
     runTimer = setTimeout(() => {
-      appendOut('\n[เกิน 10 วินาที โปรแกรมถูกหยุด]\n', 'sys');
-      finishRun(`เกินเวลา ${TIME_LIMIT_MS / 1000} วินาที อาจมีลูปที่ไม่จบ หรือรอข้อมูลเข้าที่ไม่ได้ใส่ไว้`, 'bad', 'เกินเวลา');
+      finishRun('เกินเวลา', `เกิน ${TIME_LIMIT_MS / 1000} วินาที โปรแกรมถูกหยุด อาจมีลูปที่ไม่จบ หรือรอข้อมูลเข้าที่ยังไม่ได้ใส่`);
     }, TIME_LIMIT_MS);
     runner.postMessage({ wasm: compiled.wasm, stdin }, [compiled.wasm.buffer]);
   });
@@ -382,22 +380,25 @@ async function runCode() {
 
 $('run-btn').addEventListener('click', runCode);
 $('stop-btn').addEventListener('click', () => {
-  if (!finishRun) return;
-  appendOut('\n[หยุดโดยผู้ใช้]\n', 'sys');
-  finishRun('หยุดโปรแกรมแล้ว', 'warn', 'หยุดแล้ว');
+  if (finishRun) finishRun('หยุดแล้ว', 'หยุดโดยผู้ใช้');
 });
 
 /* ---------- แชร์ ---------- */
 
+let shareTimer = 0;
 $('share-btn').addEventListener('click', async () => {
+  const btn = $('share-btn');
   const hash = await encodeShare({ lang, code: view.state.doc.toString(), input: $('stdin').value });
   const url = location.origin + location.pathname + hash;
   try {
     await navigator.clipboard.writeText(url);
-    setStatus('คัดลอกลิงก์แล้ว ส่งให้คนอื่นเปิดดูโค้ดนี้ได้เลย', 'ok');
+    btn.classList.add('done');
+    $('status').textContent = 'คัดลอกลิงก์แล้ว';
+    clearTimeout(shareTimer);
+    shareTimer = setTimeout(() => btn.classList.remove('done'), 1800);
   } catch {
     history.replaceState(null, '', hash);
-    setStatus('คัดลอกไม่ได้ ลิงก์อยู่ในช่องที่อยู่ด้านบนแล้ว', 'warn');
+    $('status').textContent = 'คัดลอกไม่ได้ ลิงก์อยู่ในช่องที่อยู่ด้านบนแล้ว';
   }
 });
 
